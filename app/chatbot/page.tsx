@@ -20,6 +20,7 @@ export default function ChatbotPage() {
   // Floating Avatar Refs
   const circleRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null); // Added to track playing audio
   
   const [messages, setMessages] = useState<{ role: 'user' | 'ai'; text: string }[]>([
     { role: 'ai', text: 'Hello! I am ARIA, the MIT Bengaluru Voice AI. How can I assist you with your placement prep today?' }
@@ -28,9 +29,10 @@ export default function ChatbotPage() {
   const [isTyping, setIsTyping] = useState(false);
   const [inputText, setInputText] = useState("");
   
-  // Login Modal State
+  // Login & Audio States
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [emailInput, setEmailInput] = useState("");
+  const [isMuted, setIsMuted] = useState(false); // New Mute State
 
   // Auto-scroll chat
   useEffect(() => {
@@ -39,7 +41,7 @@ export default function ChatbotPage() {
     }
   }, [messages, isTyping]);
 
-  // High-Res Image Processing to eliminate blur
+  // High-Res Image Processing
   useEffect(() => {
     const img = imgRef.current;
     if (!img) return;
@@ -82,7 +84,11 @@ export default function ChatbotPage() {
   }, []);
 
   const playAudioAndAnimate = (base64String: string) => {
+    // If muted, don't even create the audio
+    if (isMuted) return;
+
     const audio = new Audio(`data:audio/mp3;base64,${base64String}`);
+    currentAudioRef.current = audio; // Store reference so we can mute mid-sentence
     
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -133,6 +139,21 @@ export default function ChatbotPage() {
     audio.play();
   };
 
+  const toggleMute = () => {
+    setIsMuted(prev => {
+      const newMutedState = !prev;
+      // If we are muting and audio is currently playing, kill it immediately
+      if (newMutedState && currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current.currentTime = 0;
+        cancelAnimationFrame(animationFrameRef.current);
+        if (circleRef.current) circleRef.current.style.boxShadow = 'none';
+        if (imgRef.current) imgRef.current.style.transform = 'scale(1)';
+      }
+      return newMutedState;
+    });
+  };
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -164,7 +185,11 @@ export default function ChatbotPage() {
       });
       const data = await response.json();
       setMessages(prev => [...prev, { role: 'ai', text: data.text || "Processed." }]);
-      if (data.audio_base64) playAudioAndAnimate(data.audio_base64);
+      
+      // Only trigger audio if we are not muted
+      if (data.audio_base64 && !isMuted) {
+        playAudioAndAnimate(data.audio_base64);
+      }
     } catch (e) {
       setMessages(prev => [...prev, { role: 'ai', text: "Connection error. Please try again." }]);
     } finally {
@@ -178,40 +203,35 @@ export default function ChatbotPage() {
       {/* Background Gradient */}
       <div className="absolute inset-0 z-0 bg-[linear-gradient(-45deg,#FFFCF2,#FFE3D8,#FAD0C4,#FFD1FF,#FFFCF2)] bg-[length:400%_400%] animate-[gradientFlow_15s_ease_infinite]"></div>
 
-      {/* --- PANE 1: Slim Navigation (Left) --- */}
+      {/* --- PANE 1: Slim Navigation --- */}
       <nav className="relative z-10 w-20 hidden md:flex flex-col items-center py-6 gap-8 bg-white/40 backdrop-blur-2xl border border-white/60 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-        
-        {/* Profile / Sign In Button */}
-        <button 
-          onClick={() => setShowLoginModal(true)}
-          className="w-10 h-10 rounded-full bg-[#252422] text-white flex items-center justify-center font-bold text-xl shadow-md cursor-pointer hover:bg-[#EB5E28] transition-colors"
-          title="Sign In"
-        >
+        <button onClick={() => setShowLoginModal(true)} className="w-10 h-10 rounded-full bg-[#252422] text-white flex items-center justify-center font-bold text-xl shadow-md hover:bg-[#EB5E28] transition-colors">
           M
         </button>
-        
         <div className="flex flex-col gap-6 mt-4">
-          <Link href="/" className="w-10 h-10 flex items-center justify-center text-[#252422] opacity-50 hover:opacity-100 hover:bg-white/50 rounded-full transition-all" title="Home">
-            🏠
-          </Link>
-          <Link href="/chatbot" className="w-10 h-10 flex items-center justify-center bg-white shadow-sm text-[#252422] rounded-full border border-white/60 transition-all" title="AI Agent">
-            🎙️
-          </Link>
-          <Link href="/questions" className="w-10 h-10 flex items-center justify-center text-[#252422] opacity-50 hover:opacity-100 hover:bg-white/50 rounded-full transition-all" title="Question Vault">
-            📂
-          </Link>
-          <Link href="/stats" className="w-10 h-10 flex items-center justify-center text-[#252422] opacity-50 hover:opacity-100 hover:bg-white/50 rounded-full transition-all" title="Stats">
-            📊
-          </Link>
+          <Link href="/" className="w-10 h-10 flex items-center justify-center text-[#252422] opacity-50 hover:opacity-100 hover:bg-white/50 rounded-full transition-all">🏠</Link>
+          <Link href="/chatbot" className="w-10 h-10 flex items-center justify-center bg-white shadow-sm text-[#252422] rounded-full border border-white/60 transition-all">🎙️</Link>
+          <Link href="/questions" className="w-10 h-10 flex items-center justify-center text-[#252422] opacity-50 hover:opacity-100 hover:bg-white/50 rounded-full transition-all">📂</Link>
+          <Link href="/stats" className="w-10 h-10 flex items-center justify-center text-[#252422] opacity-50 hover:opacity-100 hover:bg-white/50 rounded-full transition-all">📊</Link>
         </div>
       </nav>
 
       {/* --- PANE 2: Center Chat Area --- */}
       <section className="relative z-10 flex-1 flex flex-col bg-white/40 backdrop-blur-2xl border border-white/60 rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden">
         
-        {/* Header */}
-        <header className="w-full pt-6 pb-2 flex items-center justify-center">
+        {/* Header with Mute Button */}
+        <header className="w-full pt-6 pb-2 flex items-center justify-between px-8">
+          <div className="w-10"></div> {/* Spacer for perfect centering */}
           <h2 className="text-[#252422] font-bold tracking-widest uppercase text-sm drop-shadow-sm">Placement Intelligence</h2>
+          <button 
+            onClick={toggleMute} 
+            className={`w-10 h-10 flex items-center justify-center rounded-full transition-all shadow-sm border ${
+              isMuted ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-white/60 border-white/80 text-[#252422]'
+            }`}
+            title={isMuted ? "Unmute Voice" : "Mute Voice"}
+          >
+            {isMuted ? '🔇' : '🔊'}
+          </button>
         </header>
 
         {/* Chat Transcript Area */}
@@ -219,9 +239,7 @@ export default function ChatbotPage() {
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[75%] p-4 rounded-2xl text-[15px] leading-relaxed shadow-sm ${
-                msg.role === 'user' 
-                  ? 'bg-[#1c1c1e] text-white rounded-tr-sm' 
-                  : 'bg-white/80 text-[#252422] rounded-tl-sm border border-white/50'
+                msg.role === 'user' ? 'bg-[#1c1c1e] text-white rounded-tr-sm' : 'bg-white/80 text-[#252422] rounded-tl-sm border border-white/50'
               }`}>
                 {msg.text}
               </div>
@@ -229,30 +247,16 @@ export default function ChatbotPage() {
           ))}
         </div>
 
-        {/* Floating Avatar Anchor (Bottom Right of Chat Area) */}
+        {/* Floating Avatar Anchor */}
         <div className="absolute bottom-[100px] right-6 md:right-12 z-20 flex flex-col items-end gap-2 pointer-events-none">
-          
-          {/* Dynamic Speech Bubble pointing to Avatar */}
           {isTyping && (
-            <div className="bg-white text-[#252422] text-xs font-medium px-4 py-3 rounded-2xl rounded-br-sm shadow-xl border border-black/5 animate-bounce shadow-[0_10px_20px_rgba(0,0,0,0.1)] pointer-events-auto">
+            <div className="bg-white text-[#252422] text-xs font-medium px-4 py-3 rounded-2xl rounded-br-sm shadow-xl border border-black/5 animate-bounce pointer-events-auto">
               Analyzing query...
             </div>
           )}
-
-          {/* Avatar Itself */}
-          <div 
-            ref={circleRef} 
-            className="w-24 h-24 md:w-32 md:h-32 rounded-full border-[3px] border-white/80 shadow-2xl bg-white/50 backdrop-blur-md relative flex items-center justify-center pointer-events-auto transition-transform duration-300 hover:scale-105"
-          >
-            <img 
-              ref={imgRef} 
-              src="/avatar.png" 
-              crossOrigin="anonymous" 
-              alt="ARIA" 
-              className="w-full h-full rounded-full object-cover z-10 transition-transform duration-75" 
-            />
-            {/* Online Status Dot */}
-            <span className="absolute bottom-2 right-2 w-4 h-4 bg-green-500 border-2 border-white rounded-full z-20 shadow-sm"></span>
+          <div ref={circleRef} className="w-24 h-24 md:w-32 md:h-32 rounded-full border-[3px] border-white/80 shadow-2xl bg-white/50 backdrop-blur-md relative flex items-center justify-center pointer-events-auto transition-transform duration-300 hover:scale-105">
+            <img ref={imgRef} src="/avatar.png" crossOrigin="anonymous" alt="ARIA" className={`w-full h-full rounded-full object-cover z-10 transition-transform duration-75 ${isMuted ? 'opacity-70 grayscale-[50%]' : ''}`} />
+            <span className={`absolute bottom-2 right-2 w-4 h-4 rounded-full z-20 shadow-sm border-2 border-white ${isMuted ? 'bg-orange-500' : 'bg-green-500'}`}></span>
           </div>
         </div>
 
@@ -260,59 +264,34 @@ export default function ChatbotPage() {
         <div className="p-6 bg-gradient-to-t from-white/40 to-transparent z-10">
           <div className="max-w-3xl mx-auto flex items-center gap-3 bg-white p-2 rounded-full shadow-lg border border-white/80">
             <input 
-              type="text"
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage(inputText)}
+              type="text" value={inputText} onChange={(e) => setInputText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendMessage(inputText)}
               placeholder="Type your message..."
               className="flex-1 bg-transparent border-none px-6 text-[#252422] outline-none font-medium placeholder-[#403D39]/50"
             />
             <button 
-              onMouseDown={() => { setIsRecording(true); recognitionRef.current?.start(); }}
-              onMouseUp={() => recognitionRef.current?.stop()}
-              onMouseLeave={() => { if (isRecording) { recognitionRef.current?.stop(); setIsRecording(false); } }}
-              className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
-                isRecording ? 'bg-red-500 text-white animate-pulse shadow-md' : 'bg-gray-100 hover:bg-gray-200 text-[#252422]'
-              }`}
+              onMouseDown={() => { setIsRecording(true); recognitionRef.current?.start(); }} onMouseUp={() => recognitionRef.current?.stop()} onMouseLeave={() => { if (isRecording) { recognitionRef.current?.stop(); setIsRecording(false); } }}
+              className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse shadow-md' : 'bg-gray-100 hover:bg-gray-200 text-[#252422]'}`}
             >
               <span>{isRecording ? '🎙️' : '🎤'}</span>
             </button>
-            <button 
-              onClick={() => handleSendMessage(inputText)}
-              className="bg-[#1c1c1e] text-white w-12 h-12 rounded-full flex items-center justify-center font-bold hover:bg-[#EB5E28] transition-colors shadow-md"
-            >
+            <button onClick={() => handleSendMessage(inputText)} className="bg-[#1c1c1e] text-white w-12 h-12 rounded-full flex items-center justify-center font-bold hover:bg-[#EB5E28] transition-colors shadow-md">
               ➤
             </button>
           </div>
         </div>
       </section>
 
-      {/* --- PANE 3: Permanent History Sidebar (Right) --- */}
+      {/* --- PANE 3: Permanent History Sidebar --- */}
       <aside className="relative z-10 w-80 hidden xl:flex flex-col bg-white/40 backdrop-blur-2xl border border-white/60 rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden">
-        
-        {/* Profile / Selector */}
         <div className="p-6 border-b border-black/5 flex items-center justify-between">
-          <div className="bg-white/60 px-4 py-2 rounded-xl text-sm font-bold text-[#252422] shadow-sm border border-white">
-            Agent ARIA v2.0 ▾
-          </div>
+          <div className="bg-white/60 px-4 py-2 rounded-xl text-sm font-bold text-[#252422] shadow-sm border border-white">Agent ARIA v2.0 ▾</div>
         </div>
-
-        {/* Quick Tools */}
         <div className="p-6 border-b border-black/5 flex flex-col gap-4">
-          <div className="flex items-center gap-3 text-sm text-[#252422] opacity-80 cursor-pointer hover:opacity-100 transition-opacity">
-            <span>📅</span> Calendar & Deadlines
-          </div>
-          <div className="flex items-center gap-3 text-sm text-[#252422] opacity-80 cursor-pointer hover:opacity-100 transition-opacity">
-            <span>📄</span> Resume Review
-          </div>
-          <button className="w-full mt-2 bg-[#1c1c1e] text-white py-3 rounded-xl text-sm font-bold shadow-md hover:bg-[#333] transition-colors">
-            ↑ Share Transcript
-          </button>
+          <div className="flex items-center gap-3 text-sm text-[#252422] opacity-80 cursor-pointer hover:opacity-100 transition-opacity"><span>📅</span> Calendar & Deadlines</div>
+          <div className="flex items-center gap-3 text-sm text-[#252422] opacity-80 cursor-pointer hover:opacity-100 transition-opacity"><span>📄</span> Resume Review</div>
+          <button className="w-full mt-2 bg-[#1c1c1e] text-white py-3 rounded-xl text-sm font-bold shadow-md hover:bg-[#333] transition-colors">↑ Share Transcript</button>
         </div>
-
-        {/* Chat History List */}
         <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
-          
           <div>
             <h4 className="text-xs font-bold text-[#403D39] uppercase tracking-wider mb-3">Today</h4>
             <ul className="space-y-3">
@@ -320,24 +299,6 @@ export default function ChatbotPage() {
               <li className="text-sm text-[#252422] opacity-80 truncate cursor-pointer hover:text-[#EB5E28]">💬 CSE Cutoff scores</li>
             </ul>
           </div>
-
-          <div>
-            <h4 className="text-xs font-bold text-[#403D39] uppercase tracking-wider mb-3">Yesterday</h4>
-            <ul className="space-y-3">
-              <li className="text-sm text-[#252422] opacity-80 truncate cursor-pointer hover:text-[#EB5E28]">💬 Explain QuickSort OA</li>
-              <li className="text-sm text-[#252422] opacity-80 truncate cursor-pointer hover:text-[#EB5E28]">💬 Mock HR round</li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="text-xs font-bold text-[#403D39] uppercase tracking-wider mb-3">Previous 7 Days</h4>
-            <ul className="space-y-3">
-              <li className="text-sm text-[#252422] opacity-80 truncate cursor-pointer hover:text-[#EB5E28]">💬 Best projects for resume</li>
-              <li className="text-sm text-[#252422] opacity-80 truncate cursor-pointer hover:text-[#EB5E28]">💬 List visiting companies</li>
-              <li className="text-sm text-[#252422] opacity-80 truncate cursor-pointer hover:text-[#EB5E28]">💬 Goldman Sachs timeline</li>
-            </ul>
-          </div>
-
         </div>
       </aside>
 
@@ -345,44 +306,14 @@ export default function ChatbotPage() {
       {showLoginModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#252422]/40 backdrop-blur-sm p-4 transition-all duration-300">
           <div className="bg-white/80 backdrop-blur-2xl border border-white/60 shadow-2xl rounded-3xl w-full max-w-sm p-8 flex flex-col relative animate-in fade-in zoom-in duration-200">
-            <button 
-              onClick={() => setShowLoginModal(false)} 
-              className="absolute top-4 right-4 text-[#252422] opacity-50 hover:opacity-100 text-xl font-bold p-2"
-            >
-              ✕
-            </button>
+            <button onClick={() => setShowLoginModal(false)} className="absolute top-4 right-4 text-[#252422] opacity-50 hover:opacity-100 text-xl font-bold p-2">✕</button>
             <h2 className="text-2xl font-bold text-[#252422] mb-2">Connect</h2>
             <p className="text-sm text-[#403D39] opacity-80 mb-6">Sign in to save your chat history and preferences.</p>
-            
-            <input 
-              type="email" 
-              value={emailInput}
-              onChange={(e) => setEmailInput(e.target.value)}
-              placeholder="student@manipal.edu" 
-              className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-[#252422] outline-none mb-4 focus:bg-white/80 focus:ring-2 focus:ring-[#EB5E28]/50 transition-all placeholder-[#403D39]/50" 
-            />
-            
-            <button 
-              onClick={() => {
-                console.log("Signing in with:", emailInput);
-                setShowLoginModal(false);
-                setEmailInput("");
-              }} 
-              className="w-full bg-[#1c1c1e] text-white font-bold py-3 rounded-xl shadow-lg hover:bg-[#EB5E28] transition-colors"
-            >
-              Continue
-            </button>
+            <input type="email" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} placeholder="student@manipal.edu" className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-[#252422] outline-none mb-4 focus:bg-white/80 focus:ring-2 focus:ring-[#EB5E28]/50 transition-all placeholder-[#403D39]/50" />
+            <button onClick={() => { setShowLoginModal(false); setEmailInput(""); }} className="w-full bg-[#1c1c1e] text-white font-bold py-3 rounded-xl shadow-lg hover:bg-[#EB5E28] transition-colors">Continue</button>
           </div>
         </div>
       )}
-
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes gradientFlow {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-      `}} />
     </main>
   );
 }
